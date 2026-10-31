@@ -1140,6 +1140,38 @@ body:has(.modal:not([hidden])) .totop,body:has(.modal:not([hidden])) .ed-bar{dis
 @media (max-width:600px){footer{padding-bottom:88px}}
 @media (min-width:601px) and (max-width:920px){.book{max-width:560px;width:100%;justify-self:center}}
 
+/* Vélos disponibles par jour, façon plan de cabine */
+.avail{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;gap:8px;background:var(--card)}
+.av-head{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px}
+.av-tag{font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.av-tag.ok{background:#E3F7EE;color:#0B7A55}
+.av-tag.low{background:#FFF1E6;color:#C24400}
+.av-tag.full{background:#FDE7E7;color:#B42318}
+.av-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:10px;align-items:center}
+.av-lbl{font-size:13px;font-weight:600;color:var(--muted)}
+.av-seats{display:flex;flex-wrap:wrap;gap:5px}
+.av-n{font-weight:800;font-size:14px;font-variant-numeric:tabular-nums}
+.avail i{display:inline-block;width:16px;height:20px;border-radius:5px 5px 3px 3px;position:relative}
+.avail i.b.free{background:#C9CDFC}.avail i.o.free{background:#FFD3C4}
+.avail i.b.sel{background:var(--blue);box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--blue)}
+.avail i.o.sel{background:var(--orange);box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--orange)}
+.avail i.taken{background:repeating-linear-gradient(45deg,#E4E5EE 0 4px,#F4F4F8 4px 8px)}
+.av-leg{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:12px;color:var(--muted);margin:2px 0 0}
+.av-leg i{width:11px;height:13px;margin-right:2px;vertical-align:-2px}
+.av-msg{font-size:13px;font-weight:600;color:#C24400;margin:0}
+@media (prefers-reduced-motion:no-preference){.avail i.sel{animation:seatPop .35s cubic-bezier(.2,1.6,.4,1)}@keyframes seatPop{40%{transform:scale(1.25)}}}
+/* Calendrier : vélos restants sous chaque date */
+.dp-d{flex-direction:column;line-height:1.05;gap:1px}
+.dp-d small{font-size:9px;font-weight:700;opacity:.8}
+button.dp-d.ok small{color:#0B7A55}
+button.dp-d.low small{color:#C24400}
+button.dp-d.on small,button.dp-d:hover small{color:#fff}
+.dp-d.full{text-decoration:line-through;color:#B42318;opacity:.6}
+.cal-av{font-size:14px;border-radius:12px;padding:10px 12px;margin:0}
+.cal-av.ok{background:#E3F7EE;color:#0B5E43}.cal-av.low{background:#FFF1E6;color:#9A3600}.cal-av.full{background:#FDE7E7;color:#B42318}
+/* Le bouton « Donner mon avis » (feedback.js) occupe le coin bas droit : la flèche de retour en haut monte au-dessus */
+body:has(#vf-host) .totop{bottom:max(80px,calc(env(safe-area-inset-bottom,0px) + 72px))}
+
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -1998,10 +2030,34 @@ function baseTotal(){
   return S.adults*PRICE.adult+S.kidBike*PRICE.kidBike+S.kidOwn*PRICE.kidOwn}
 /* Caution 10 000 F par vélo VÉCO pour les particuliers ; les membres du Pass GBONHI n'en paient pas, ni les enfants venus avec leur vélo. */
 const caution=()=>S.prod==="pass"?0:10000*(S.adults+S.kidBike);
+/* Vélos par jour : 10 vélos adultes (bleus) et 5 vélos enfants (orange), partagés entre les vagues et la location.
+   Les réservations confirmées dans ce navigateur sont décomptées ; une source partagée (window.VECO_BOOKED, chargée depuis un serveur) peut s'y ajouter. */
+const CAP={adult:10,kid:5};
+let BOOKED={};try{BOOKED=JSON.parse(localStorage.getItem("veco-booked")||"{}")||{}}catch(e){BOOKED={}}
+/* Réservations partagées : le Google Sheet de VÉCO (Apps Script) tient le compte des vélos réservés pour tous les visiteurs.
+   S'il ne répond pas, on se rabat sur les réservations faites dans ce navigateur. */
+const PLACES_URL="https://script.google.com/macros/s/AKfycbzjLics-eSMA8DUe1WRo0ndT8fS8c7Y0vY88wtD7obWLxtQKDvfH_E1Y_J3jY99rMlv/exec";
+let SERVER=false,modalErr="";
+const bookedOn=iso=>{const b=(SERVER?window.VECO_BOOKED:BOOKED)||{},o=b[iso]||{};return {adult:o.adult||0,kid:o.kid||0}};
+function loadPlaces(){if(!PLACES_URL||!window.fetch)return Promise.resolve();
+  return fetch(PLACES_URL+"?action=places",{cache:"no-store"}).then(r=>r.json()).then(d=>{if(d&&d.ok&&d.places){window.VECO_BOOKED=d.places;SERVER=true;
+    if(typeof syncQuick==="function"){clampToDay();syncQuick();if(!modal.hidden&&S.step===1)render()}dispatchEvent(new Event("veco:places"))}}).catch(()=>{})}
+function sendBooking(){if(!PLACES_URL||!window.fetch)return Promise.resolve(null);
+  const payload={kind:"booking",code:S.code,jour:S.prod==="pass"?"":curDay(),heure:S.prod==="location"?H(S.heure):S.prod==="pass"?"":H(slot().h),formule:P().t,duree:S.prod==="location"?LOC[S.dur][0]:"",
+    adults:S.prod==="pass"?0:S.adults,kidBike:S.prod==="pass"?0:S.kidBike,kidOwn:S.prod==="pass"?0:S.kidOwn,student:studentOK(),total:total(),caution:caution(),nom:S.nom.trim(),tel:S.tel.trim(),mail:S.mail.trim(),
+    canal:S.canal==="mail"?"E-mail":"WhatsApp",paiement:(OPS.find(x=>x[0]===S.op)||[])[1]||""};
+  const req=fetch(PLACES_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>null);
+  return Promise.race([req,new Promise(r=>setTimeout(()=>r(null),12000))])}
+function avail(iso){const b=bookedOn(iso);return {adult:Math.max(0,CAP.adult-b.adult),kid:Math.max(0,CAP.kid-b.kid)}}
+const curDay=()=>S.prod==="location"?S.date:slot().iso;
+function saveBooking(){const iso=curDay();if(S.prod==="pass"||!iso)return;const b=BOOKED[iso]||{adult:0,kid:0};b.adult+=S.adults;b.kid+=S.kidBike;BOOKED[iso]=b;try{localStorage.setItem("veco-booked",JSON.stringify(BOOKED))}catch(e){}}
+/* Les compteurs ne dépassent pas les vélos restants du jour choisi */
+function clampToDay(){if(S.prod==="pass")return;const a=avail(curDay());S.adults=Math.min(S.adults,a.adult);S.kidBike=Math.min(S.kidBike,a.kid)}
+let capMsg="";
 const LIMIT={adults:10,kidBike:6,kidOwn:6};
-const bump=(k,d)=>{const min=S.prod==="famille"&&k==="adults"?2:0;S[k]=Math.min(LIMIT[k],Math.max(min,S[k]+d));
+const bump=(k,d)=>{const min=S.prod==="famille"&&k==="adults"?2:0,a=avail(curDay()),cap=k==="adults"?a.adult:k==="kidBike"?a.kid:LIMIT[k];capMsg=d>0&&S[k]>=cap&&k!=="kidOwn"?(cap?`Plus que ${cap} vélo${cap>1?"s":""} ${k==="adults"?"adulte":"enfant"}${cap>1?"s":""} disponible${cap>1?"s":""} ce jour-là.`:`Plus de vélo ${k==="adults"?"adulte":"enfant"} disponible ce jour-là : choisissez un autre jour.`):"";S[k]=Math.min(LIMIT[k],cap,Math.max(min,S[k]+d));
   if(S.prod==="famille"&&S.kidBike+S.kidOwn<2)S[k==="kidOwn"?"kidOwn":"kidBike"]=2-(k==="kidOwn"?S.kidBike:S.kidOwn)};
-function setProd(p){S.prod=p;if(p==="famille"){S.adults=Math.max(2,S.adults);if(S.kidBike+S.kidOwn<2)S.kidBike=2-S.kidOwn}if(p==="location")S.kidOwn=0}
+function setProd(p){S.prod=p;if(p==="famille"){S.adults=Math.max(2,S.adults);if(S.kidBike+S.kidOwn<2)S.kidBike=2-S.kidOwn}if(p==="location")S.kidOwn=0;clampToDay()}
 const when=()=>S.prod==="location"?`${longDay(S.date)} · ${H(S.heure)}`:S.prod==="pass"?"Dès le samedi 30 janvier 2027":`${slot().l} 2027 · ${H(slot().h)}`;
 const who=()=>[S.adults?`${S.adults} adulte${S.adults>1?"s":""}`:"",S.kidBike?`${S.kidBike} enfant${S.kidBike>1?"s":""} vélo VÉCO`:"",S.kidOwn?`${S.kidOwn} enfant${S.kidOwn>1?"s":""} avec son vélo`:""].filter(Boolean).join(" · ");
 
@@ -2025,6 +2081,12 @@ function bookingForm(id){
 const dpOpen={};let dpMonth=null;
 const isMoment=()=>!/^\d{4}-\d\d-\d\d-\d\d$/.test(S.slot);
 const wave=()=>isMoment()?"07":S.slot.slice(-2);
+function availBox(){const iso=curDay(),a=avail(iso),pip=(n,cap,sel,cls)=>Array.from({length:cap},(_,i)=>`<i class="${i<cap-n?"taken":i<cap-n+sel?"sel":"free"} ${cls}"></i>`).join("");
+  const free=a.adult+a.kid;
+  return `<div class="avail" aria-live="polite"><div class="av-head"><b>Vélos disponibles ce jour</b><span class="av-tag ${free===0?"full":free<=5?"low":"ok"}">${free===0?"Complet":free<=5?"Plus que "+free:free+" sur 15"}</span></div>
+    <div class="av-row"><span class="av-lbl">Adultes</span><span class="av-seats" aria-hidden="true">${pip(a.adult,CAP.adult,Math.min(S.adults,a.adult),"b")}</span><span class="av-n">${a.adult}/${CAP.adult}</span></div>
+    <div class="av-row"><span class="av-lbl">Enfants</span><span class="av-seats" aria-hidden="true">${pip(a.kid,CAP.kid,Math.min(S.kidBike,a.kid),"o")}</span><span class="av-n">${a.kid}/${CAP.kid}</span></div>
+    <p class="av-leg"><i class="free b"></i>libre <i class="sel b"></i>votre choix <i class="taken b"></i>réservé</p>${capMsg?`<p class="av-msg">${capMsg}</p>`:""}</div>`}
 const dayOK=(iso,loc)=>loc?iso>=firstOpenDay()&&iso<="2027-12-31":SLOTS.some(x=>x.iso===iso&&!isNaN(x.id.slice(-2))&&x.id.length===13&&!closed(x));
 function dateField(id){
   const loc=S.prod==="location",cur=loc?S.date:slot().iso;
@@ -2033,22 +2095,26 @@ function dateField(id){
   if(dpOpen[id]){const mo=dpMonth||cur.slice(0,7),[y,m]=mo.split("-").map(Number),first=new Date(y,m-1,1),n=new Date(y,m,0).getDate(),off=(first.getDay()+6)%7;
     let g=["lun.","mar.","mer.","jeu.","ven.","sam.","dim."].map(j=>`<span class="dp-w">${j}</span>`).join("")+"<span></span>".repeat(off);
     for(let d=1;d<=n;d++){const iso=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`,ok=dayOK(iso,loc);
-      g+=ok?`<button type="button" class="dp-d${iso===cur?" on":""}" data-dpday="${iso}">${d}</button>`:`<span class="dp-d off">${d}</span>`}
+      const av=ok?avail(iso):null,left=av?av.adult+av.kid:0;
+      g+=ok&&left?`<button type="button" class="dp-d${iso===cur?" on":""} ${left<=5?"low":"ok"}" data-dpday="${iso}" aria-label="${longDay(iso)} : ${left} vélos disponibles">${d}<small>${left}</small></button>`:ok?`<span class="dp-d off full" title="Complet">${d}<small>0</small></span>`:`<span class="dp-d off">${d}</span>`}
     h+=`<div class="dp" role="dialog" aria-label="Choisir une date"><div class="dp-head"><button type="button" data-dpnav="-1" aria-label="Mois précédent"${mo<="2027-01"?" disabled":""}>‹</button><b>${MOIS[m-1].replace(/^./,c=>c.toUpperCase())} ${y}</b><button type="button" data-dpnav="1" aria-label="Mois suivant"${mo>="2027-12"?" disabled":""}>›</button></div><div class="dp-grid">${g}</div><p class="dp-note">${loc?"Location libre tous les jours, réservation au plus tard la veille à 12H.":"L'Heure Verte part chaque samedi, à 7H ou 17H. Les autres jours : location libre."}</p></div>`}
   h+=`</div>`;
+  h+=availBox();
   if(!loc&&!isMoment())h+=`<div class="field"><span class="lbl">Départ</span><div class="seg" style="--n:2"><button type="button" data-wave="07" aria-pressed="${wave()==="07"}">7H · lever du soleil</button><button type="button" data-wave="17" aria-pressed="${wave()==="17"}">17H · coucher du soleil</button></div></div>`;
   return h}
 const PASS_PERKS=["Jusqu'à 10 sorties L'Heure Verte par mois, jusqu'à 2 par samedi (7H et 17H)", "Soit 2 000 F la sortie au lieu de 3 000 F", "Pas de caution sur les vélos VÉCO", "−30 % dans nos restaurants partenaires, sur présentation de la carte membre", "Les Nocturnes VÉCO, la balade du samedi soir réservée aux membres", "Réservation prioritaire sur les créneaux de L'Heure Verte", "Une collation après chaque séance : eau, jus et boissons", "Les master class VÉCO : entretien, sécurité, longues sorties", "Le kit membre : carte membre, t-shirt et chaussettes du club", "Le groupe WhatsApp privé des membres, pour le réseautage"];
 function formError(){
   if(S.prod==="pass")return "";
   if(!people())return "Ajoutez au moins un adulte ou un enfant.";
+  {const a=avail(curDay());if(S.adults>a.adult||S.kidBike>a.kid)return "Il n'y a plus assez de vélos ce jour-là : réduisez le nombre de participants ou choisissez un autre jour.";
+   if(S.prod==="famille"&&(a.adult<2||a.kid+S.kidOwn<2))return "Le Pack famille demande 2 vélos adultes et 2 vélos enfants : choisissez un autre jour.";}
   if(S.prod==="location"&&(!S.date||S.date<LAUNCH||closedDay(S.date)))return "Choisissez un jour à partir du "+longDay(firstOpenDay())+". Réservation au plus tard la veille à 12H.";
   if(S.prod!=="location"&&closed(slot()))return "Les réservations pour ce samedi sont closes (vendredi 12H).";
   return ""}
 function onFormClick(e,redraw){
   const dp=e.target.closest("[data-dp]");if(dp){const k=dp.dataset.dp;dpOpen[k]=!dpOpen[k];dpMonth=null;redraw();return true}
   const dn=e.target.closest("[data-dpnav]");if(dn){const cur=dpMonth||(S.prod==="location"?S.date:slot().iso).slice(0,7);const [y,m]=cur.split("-").map(Number);const d=new Date(y,m-1+(+dn.dataset.dpnav),1);dpMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;redraw();return true}
-  const dd=e.target.closest("[data-dpday]");if(dd){const iso=dd.dataset.dpday;if(S.prod==="location")S.date=iso;else{const w=wave();S.slot=SLOTS.some(x=>x.id===iso+"-"+w)?iso+"-"+w:iso+"-07"}Object.keys(dpOpen).forEach(k=>dpOpen[k]=false);dpMonth=null;redraw();return true}
+  const dd=e.target.closest("[data-dpday]");if(dd){const iso=dd.dataset.dpday;if(S.prod==="location")S.date=iso;else{const w=wave();S.slot=SLOTS.some(x=>x.id===iso+"-"+w)?iso+"-"+w:iso+"-07"}Object.keys(dpOpen).forEach(k=>dpOpen[k]=false);dpMonth=null;capMsg="";clampToDay();redraw();return true}
   const wv=e.target.closest("[data-wave]");if(wv){const id=slot().iso+"-"+wv.dataset.wave;if(SLOTS.some(x=>x.id===id))S.slot=id;redraw();return true}
   const o=e.target.closest("[data-prod]");if(o){setProd(o.dataset.prod);redraw();return true}
   const d=e.target.closest("[data-dur]");if(d){S.dur=d.dataset.dur;redraw();return true}
@@ -2063,6 +2129,7 @@ quick.addEventListener("click",e=>onFormClick(e,syncQuick));
 quick.addEventListener("change",e=>onFormChange(e,syncQuick));
 quick.addEventListener("submit",e=>{e.preventDefault();const m=formError();if(m){qErr.textContent=m;qErr.hidden=false;return}openModal(null,null,2)});
 syncQuick();
+loadPlaces();
 
 /* Onglets */
 const tabs=document.querySelectorAll(".tab");
@@ -2099,7 +2166,7 @@ const news=document.getElementById("news-form");if(news)news.addEventListener("s
 const modal=document.getElementById("modal"),body=document.getElementById("m-body"),next=document.getElementById("m-next"),back=document.getElementById("m-back"),foot=document.getElementById("m-foot");
 const LABELS=["Votre réservation","Vos coordonnées","Paiement","Validation"];
 let lastFocus=null;
-function openModal(prod,slotId,step,date){lastFocus=document.activeElement;
+function openModal(prod,slotId,step,date){lastFocus=document.activeElement;modalErr="";
   if(prod)setProd(prod);if(slotId){if(S.prod==="location"||S.prod==="pass")setProd("sortie");S.slot=slotId}if(date){setProd("location");S.date=date}
   S.step=step||1;S.code="";modal.hidden=false;document.body.style.overflow="hidden";render();document.getElementById("m-close").focus()}
 function closeModal(){modal.hidden=true;document.body.style.overflow="";if(S.step>=4){Object.assign(S,{adults:0,kidBike:0,kidOwn:0,op:"",step:1,code:""})}syncQuick();if(lastFocus)lastFocus.focus()}
@@ -2123,7 +2190,7 @@ function render(){
   document.getElementById("m-step-l").textContent=`Étape ${s} sur 4 · ${LABELS[s-1]}`;
   foot.hidden=s>=4;back.hidden=s===1;
   next.textContent=s===3?`Payer ${fmt(total())}`:"Continuer";
-  if(s===1)body.innerHTML=bookingForm("m")+`<p class="err" id="m-err" hidden></p>`;
+  if(s===1)body.innerHTML=bookingForm("m")+`<p class="err" id="m-err"${modalErr?"":" hidden"}>${modalErr}</p>`;
   if(s===2)body.innerHTML=`<div class="field"><label for="m-nom">Nom et prénom</label><input id="m-nom" type="text" autocomplete="name" value="${S.nom}" placeholder="Ex. Aya Kouassi"></div>
     <div class="two"><div class="field"><label for="m-tel">Numéro WhatsApp</label><input id="m-tel" type="tel" autocomplete="tel" value="${S.tel}" placeholder="07 00 00 00 00"></div>
     <div class="field"><label for="m-mail">E-mail (facultatif)</label><input id="m-mail" type="email" autocomplete="email" value="${S.mail}" placeholder="aya@exemple.com"></div></div>
@@ -2146,11 +2213,19 @@ body.addEventListener("click",e=>{
 body.addEventListener("change",e=>onFormChange(e,render));
 body.addEventListener("input",e=>{if(e.target.id==="m-nom")S.nom=e.target.value;if(e.target.id==="m-tel")S.tel=e.target.value;if(e.target.id==="m-mail")S.mail=e.target.value});
 const err=t=>{const x=document.getElementById("m-err");x.textContent=t;x.hidden=false};
-next.addEventListener("click",()=>{
+next.addEventListener("click",()=>{modalErr="";
   if(S.step===1){const m=formError();if(m)return err(m)}
   if(S.step===2){if(S.nom.trim().length<3)return err("Indiquez votre nom et prénom.");if(S.tel.replace(/\D/g,"").length<10)return err("Le numéro doit compter 10 chiffres, par exemple 07 00 00 00 00.");
     if(S.canal==="mail"&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S.mail.trim()))return err("Indiquez une adresse e-mail valide, ou recevez le code par WhatsApp.")}
-  if(S.step===3&&!S.op)return err("Choisissez un moyen de paiement.");
+  if(S.step===3){if(!S.op)return err("Choisissez un moyen de paiement.");
+    /* Validation : la réservation part au Sheet, qui refuse si les vélos sont partis entre-temps */
+    S.code=newCode();next.disabled=true;next.textContent="Validation…";
+    sendBooking().then(res=>{next.disabled=false;
+      if(res&&res.ok===false){const l=res.left||{adult:0,kid:0};S.code="";S.step=1;
+        modalErr=`Désolé, quelqu'un vient de réserver : il reste ${l.adult} vélo${l.adult>1?"s":""} adulte${l.adult>1?"s":""} et ${l.kid} vélo${l.kid>1?"s":""} enfant${l.kid>1?"s":""} ce jour-là.`;render();loadPlaces();return}
+      if(!res||!SERVER)saveBooking();
+      S.step=4;render();loadPlaces()});
+    return}
   S.step++;render();
 });
 back.addEventListener("click",()=>{S.step--;render()});
@@ -2225,6 +2300,7 @@ if(grid){
   function drawDay(){const sl=byDay[sel]||[],ev=EVENTS[sel]||SPECIAL[sel],open=sel>=LAUNCH&&!closedDay(sel);
     let h=`<span class="eyebrow">${longDay(sel)}</span><h3>${ev||(sl.length?"L'Heure Verte":"Sortie libre")}</h3>`;
     if(sl.length)h+=`<p>Départ de la base VÉCO. Deux heures encadrées, vélo, casque et collation fournis.</p><div class="cal-slots">${sl.map(s=>`<div class="cal-slot"><span class="h">${H(s.h)}</span><span>${s.h==="07:00"?"Lever du soleil":"Coucher du soleil"}</span>${closed(s)?`<em>Réservations closes</em>`:`<button class="btn btn-orange" type="button" data-slot="${s.id}">Réserver</button>`}</div>`).join("")}</div>`;
+    if(sel>=LAUNCH&&window.avail){const v=avail(sel),f=v.adult+v.kid;h+=`<p class="cal-av ${f===0?"full":f<=5?"low":"ok"}"><b>${f===0?"Complet":f+" vélos disponibles"}</b> · ${v.adult} adulte${v.adult>1?"s":""} sur 10 · ${v.kid} enfant${v.kid>1?"s":""} sur 5</p>`}
     if(sel<LAUNCH)h+=`<p>VÉCO démarre le samedi 30 janvier 2027. Choisissez un jour à partir de cette date.</p>`;
     else if(open)h+=`<p>${sl.length?"Vous préférez une autre heure ? ":""}Louez un vélo ce jour-là, à l'heure de votre choix, dès 2 500 F l'heure.</p><button class="btn btn-ghost" type="button" data-loc-date="${sel}">Louer un vélo ce jour-là</button>`;
     else if(!sl.length)h+=`<p>Les réservations pour ce jour sont closes (la veille à 12H).</p>`;
@@ -2238,6 +2314,7 @@ if(grid){
   grid.addEventListener("click",e=>{const b=e.target.closest("[data-iso]");if(b){sel=b.dataset.iso;draw()}});
   $("#cal-prev").addEventListener("click",()=>{if(mi>0){mi--;draw()}});
   $("#cal-next").addEventListener("click",()=>{if(mi<months.length-1){mi++;draw()}});
+  addEventListener("veco:places",draw);
   mi=Math.max(0,months.indexOf(sel.slice(0,7)));draw()}
 
 /* 5. Avis */
@@ -2739,5 +2816,7 @@ let last=scrollY,vel=0;
 
 </script>
 
+<script>window.FEEDBACK_CONFIG=window.FEEDBACK_CONFIG||{endpoint:"https://script.google.com/macros/s/AKfycbzjLics-eSMA8DUe1WRo0ndT8fS8c7Y0vY88wtD7obWLxtQKDvfH_E1Y_J3jY99rMlv/exec"};</script>
+<script src="feedback.js"></script>
 </body>
 </html>

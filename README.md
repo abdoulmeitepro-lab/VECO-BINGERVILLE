@@ -7,6 +7,7 @@ Site vitrine et réservation du club vélo VÉCO, à Bingerville (Côte d'Ivoire
 - `index.html` : le site complet (une seule page, avec ses onglets)
 - `images/` : les photos et illustrations
 - `pay/` : les logos des moyens de paiement
+- `feedback.js` : le bouton « Donner mon avis » (commentaires envoyés vers le Google Sheet)
 
 ## Mise en ligne
 
