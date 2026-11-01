@@ -1263,8 +1263,6 @@ button.dp-d.on small,button.dp-d:hover small{color:#fff}
 .dp-d.full{text-decoration:line-through;color:#B42318;opacity:.6}
 .cal-av{font-size:14px;border-radius:12px;padding:10px 12px;margin:0}
 .cal-av.ok{background:#E3F7EE;color:#0B5E43}.cal-av.low{background:#FFF1E6;color:#9A3600}.cal-av.full{background:#FDE7E7;color:#B42318}
-/* Le bouton « Donner mon avis » (feedback.js) occupe le coin bas droit : la flèche de retour en haut monte au-dessus */
-body:has(#vf-host) .totop{bottom:max(80px,calc(env(safe-area-inset-bottom,0px) + 72px))}
 
 /* ===== Corrections UX/UI (cahier) ===== */
 :root[data-theme="dark"]{--accent-text:#FF7A52;--action:#FF3D0A}
@@ -1336,7 +1334,6 @@ body:has(#vf-host) .totop{bottom:max(80px,calc(env(safe-area-inset-bottom,0px) +
   .m-bar{display:block;position:fixed;left:16px;right:16px;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:40;border:0;border-radius:999px;background:var(--action);color:#fff;font:800 17px var(--font);min-height:54px;box-shadow:0 14px 30px -12px rgba(255,61,10,.75);cursor:pointer;transform:translateY(140%);transition:transform .25s}
   .m-bar.show{transform:none}
   body:has(.m-bar.show) .totop{display:none!important}
-  body:has(.m-bar.show) #vf-host{bottom:84px!important}
   .totop{display:none!important}
   footer{padding-bottom:90px}
   /* Fondu sur le bord des onglets qui défilent */
@@ -3265,7 +3262,5 @@ upd();
 </script>
 
 
-<script>window.FEEDBACK_CONFIG=window.FEEDBACK_CONFIG||{endpoint:"https://script.google.com/macros/s/AKfycbzjLics-eSMA8DUe1WRo0ndT8fS8c7Y0vY88wtD7obWLxtQKDvfH_E1Y_J3jY99rMlv/exec"};</script>
-<script src="feedback.js"></script>
 </body>
 </html>
